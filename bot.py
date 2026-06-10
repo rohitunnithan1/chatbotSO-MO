@@ -51,7 +51,7 @@ def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
 
     while len(all_issues) < max_results:
         resp = req_lib.get(
-            f"{JIRA_BASE}/rest/api/3/issue/search",
+            f"{JIRA_BASE}/rest/api/3/search",
             auth=auth,
             params={
                 "jql": jql,
@@ -61,7 +61,7 @@ def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
             },
             timeout=20
         )
-        print(f"[jira] GET /issue/search status={resp.status_code}")
+        print(f"[jira] GET /search status={resp.status_code}")
         if not resp.ok:
             print(f"[jira] error body: {resp.text[:500]}")
             resp.raise_for_status()
