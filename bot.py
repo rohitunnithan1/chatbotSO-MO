@@ -263,6 +263,8 @@ def handle_dm(event, client):
     try:
         reply = answer_question(text)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         reply = f"⚠️ Something went wrong: {e}"
 
     client.chat_update(channel=channel, ts=thinking_ts, text=reply)
