@@ -14,7 +14,7 @@ import urllib.error
 from datetime import date
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
-import google.generativeai as genai
+from google import genai
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 SLACK_BOT_TOKEN  = os.environ["SLACK_BOT_TOKEN"]
@@ -26,8 +26,7 @@ GEMINI_KEY       = os.environ["GEMINI_API_KEY"]
 APPS_SCRIPT_URL  = os.environ.get("APPS_SCRIPT_URL", "")
 
 # ── Gemini setup ──────────────────────────────────────────────────────────────
-genai.configure(api_key=GEMINI_KEY)
-gemini = genai.GenerativeModel("gemini-1.5-flash")
+gemini = genai.Client(api_key=GEMINI_KEY)
 
 # ── Slack app ─────────────────────────────────────────────────────────────────
 app = App(token=SLACK_BOT_TOKEN)
@@ -206,7 +205,10 @@ def answer_question(question: str) -> str:
         + f"\n\nDATA:\n{context}\n\nQuestion: {question}"
     )
 
-    response = gemini.generate_content(prompt)
+    response = gemini.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=prompt
+    )
     return response.text.strip()
 
 
