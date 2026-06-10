@@ -10,6 +10,7 @@ import json
 import time
 import base64
 import urllib.request
+import urllib.parse
 import urllib.error
 from datetime import date
 from slack_bolt import App
@@ -57,15 +58,15 @@ def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
     start_at = 0
 
     while len(all_issues) < max_results:
-        payload = json.dumps({
+        params = urllib.parse.urlencode({
             "jql": jql,
-            "fields": fields,
+            "fields": ",".join(fields),
             "maxResults": 50,
             "startAt": start_at
-        }).encode()
+        })
         req = urllib.request.Request(
-            f"{JIRA_BASE}/rest/api/3/issue/search",
-            data=payload, headers=headers, method="POST"
+            f"{JIRA_BASE}/rest/api/3/issue/search?{params}",
+            headers=headers, method="GET"
         )
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read())
