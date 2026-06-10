@@ -64,7 +64,7 @@ def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
             "startAt": start_at
         }).encode()
         req = urllib.request.Request(
-            f"{JIRA_BASE}/rest/api/3/search",
+            f"{JIRA_BASE}/rest/api/3/issue/search",
             data=payload, headers=headers, method="POST"
         )
         with urllib.request.urlopen(req, timeout=20) as resp:
