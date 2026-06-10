@@ -8,10 +8,7 @@ import os
 import re
 import json
 import time
-import base64
-import urllib.request
-import urllib.parse
-import urllib.error
+import requests as req_lib
 from datetime import date
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
@@ -48,28 +45,27 @@ def cache_set(key, data):
 
 # ── Jira REST helper ──────────────────────────────────────────────────────────
 def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
-    auth = base64.b64encode(f"{JIRA_EMAIL}:{JIRA_TOKEN}".encode()).decode()
-    headers = {
-        "Authorization": f"Basic {auth}",
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-    }
+    auth = (JIRA_EMAIL, JIRA_TOKEN)
     all_issues = []
     start_at = 0
 
     while len(all_issues) < max_results:
-        params = urllib.parse.urlencode({
-            "jql": jql,
-            "fields": ",".join(fields),
-            "maxResults": 50,
-            "startAt": start_at
-        })
-        req = urllib.request.Request(
-            f"{JIRA_BASE}/rest/api/2/search?{params}",
-            headers=headers, method="GET"
+        resp = req_lib.post(
+            f"{JIRA_BASE}/rest/api/3/issue/search",
+            auth=auth,
+            json={
+                "jql": jql,
+                "fields": fields,
+                "maxResults": 50,
+                "startAt": start_at
+            },
+            timeout=20
         )
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read())
+        print(f"[jira] POST /issue/search status={resp.status_code}")
+        if not resp.ok:
+            print(f"[jira] error body: {resp.text[:500]}")
+            resp.raise_for_status()
+        data = resp.json()
         issues = data.get("issues", [])
         all_issues.extend(issues)
         if len(issues) < 50:
