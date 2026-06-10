@@ -47,18 +47,17 @@ def cache_set(key, data):
 def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
     auth = (JIRA_EMAIL, JIRA_TOKEN)
     all_issues = []
-    start_at = 0
+    next_page_token = None
 
     while len(all_issues) < max_results:
+        payload = {"jql": jql, "fields": fields, "maxResults": 50}
+        if next_page_token:
+            payload["nextPageToken"] = next_page_token
+
         resp = req_lib.post(
             f"{JIRA_BASE}/rest/api/3/search/jql",
             auth=auth,
-            json={
-                "jql": jql,
-                "fields": fields,
-                "maxResults": 50,
-                "startAt": start_at
-            },
+            json=payload,
             timeout=20
         )
         print(f"[jira] POST /search/jql status={resp.status_code}")
@@ -68,9 +67,9 @@ def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
         data = resp.json()
         issues = data.get("issues", [])
         all_issues.extend(issues)
-        if len(issues) < 50:
+        next_page_token = data.get("nextPageToken")
+        if not next_page_token or len(issues) < 50:
             break
-        start_at += 50
 
     return all_issues
 
