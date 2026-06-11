@@ -135,20 +135,28 @@ def fetch_del() -> list:
 
 def fetch_sf() -> list:
     if not APPS_SCRIPT_URL:
+        print("[warn] SF: no APPS_SCRIPT_URL configured")
         return []
     cached = cache_get("sf")
     if cached is not None:
         return cached
     try:
-        req = urllib.request.Request(
-            f"{APPS_SCRIPT_URL}?action=data",
-            headers={"Accept": "application/json"}
+        resp = req_lib.get(
+            APPS_SCRIPT_URL,
+            params={"action": "data"},
+            headers={"Accept": "application/json"},
+            timeout=15,
+            allow_redirects=True
         )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            data = json.loads(resp.read())
-        cache_set("sf", data)
-        print(f"[cache] Fetched {len(data)} SF opportunities")
-        return data
+        print(f"[sf] status={resp.status_code} content-type={resp.headers.get('content-type','')}")
+        if resp.ok and "application/json" in resp.headers.get("content-type", ""):
+            data = resp.json()
+            cache_set("sf", data)
+            print(f"[cache] Fetched {len(data)} SF opportunities")
+            return data
+        else:
+            print(f"[warn] SF returned non-JSON: {resp.text[:200]}")
+            return []
     except Exception as e:
         print(f"[warn] SF fetch failed: {e}")
         return []
@@ -157,22 +165,45 @@ def fetch_sf() -> list:
 # ── AI answer ─────────────────────────────────────────────────────────────────
 SYSTEM_PROMPT = """You are ATI Ops Bot, the operations assistant for ATI Motors' manufacturing and sales team.
 
-You have access to live data from:
-1. **Jira MOM** (Build Rolling Forecast) — one ticket per AMR unit being manufactured
-   - status: "To Do" = not started | "In Progress" = building | "Done" = dispatched
-   - key fields: summary (contains customer name), amrType, dueDate, expectedDispatch, actualDispatch
-2. **Jira DEL** (Delivery Orders) — one ticket per customer sales order
-   - key fields: summary (customer), amrType, qty, location, poNumber, status, dueDate
-3. **Salesforce pipeline** — upcoming deals (if available)
+## DATA SOURCES
 
-Answer rules:
-- Be concise and factual. Use bullet points for lists.
-- Always include ticket keys (e.g. MOM-101) when referencing specific units.
-- When asked about a customer, match their name in the summary field.
+### Jira MOM — Build Rolling Forecast
+One ticket per AMR unit being manufactured. Created automatically when a DEL ticket is approved.
+- **Status progression**: To Do → Kitting → Production → Bringup → Validation → Dispatch → Done
+- **MRS status** = Build is BLOCKED due to material shortage. These are stuck and cannot proceed.
+- **key fields**: summary (customer name), amrType, dueDate, expectedDispatch, actualDispatch
+- expectedDispatch = planned dispatch date. actualDispatch = confirmed date (only set when Done/Dispatched).
+- If expectedDispatch is in the past and status is not Done/Dispatch, the unit is OVERDUE.
+
+### Jira DEL — Delivery Orders
+One ticket per customer sales order. When approved, MOM tickets are auto-created (one per unit).
+- **key fields**: summary (customer name + product), amrType, qty (number of units), location, poNumber, status, dueDate
+- DEL and MOM tickets for the same customer share the customer name in their summary field.
+- If qty=3 for a DEL ticket, there will be 3 MOM tickets for that customer.
+- DEL statuses: Requested → Approved → In Progress → Dispatched
+
+### Salesforce Pipeline (if available)
+Upcoming deals not yet converted to DEL tickets. Shows future demand.
+
+## HOW TO ANSWER
+
+**Customer queries**: Match customer name across both DEL (the order) and MOM (each unit being built).
+
+**DEL ↔ MOM linking**: To find manufacturing status for a DEL order, find MOM tickets with the same customer name in summary. Example: DEL-50 "HUL Haldia" → look for MOM tickets with "HUL Haldia" in summary.
+
+**Material-blocked builds**: Filter MOM tickets where status = "MRS". These are stuck waiting for parts. Report them clearly as BLOCKED.
+
+**Dispatch questions**:
+- Use actualDispatch for units with status Done or Dispatch
+- Use expectedDispatch for units still in progress
+- Flag any unit where expectedDispatch < today and status ≠ Done as OVERDUE ⏰
+
+**Formatting rules**:
+- Be concise. Use bullet points for lists.
+- Always include ticket key (MOM-101, DEL-50) when referencing tickets.
 - Dates are YYYY-MM-DD. Today is {TODAY}.
-- If a data source is unavailable, say so and answer from what you have.
-- For dispatch questions, use actualDispatch if status=Done, otherwise expectedDispatch.
-- Flag overdue items (expectedDispatch in the past, status not Done) clearly.
+- If a data source is unavailable, say so clearly and answer from what you have.
+- Group by customer or status when listing multiple items.
 """
 
 def answer_question(question: str) -> str:
