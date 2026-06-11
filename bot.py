@@ -226,7 +226,7 @@ def answer_question(question: str) -> str:
         )
     elif sf and isinstance(sf, dict):
         # Apps Script may return {"data": [...]} wrapper
-        sf_list = sf.get("data") or sf.get("opportunities") or []
+        sf_list = sf.get("rows") or sf.get("data") or sf.get("opportunities") or []
         context += (
             f"\n## Salesforce — {len(sf_list)} opportunities\n"
             f"{json.dumps(sf_list[:120], separators=(',', ':'))}\n"
