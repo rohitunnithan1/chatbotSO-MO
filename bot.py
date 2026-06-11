@@ -97,13 +97,24 @@ def fetch_mom() -> list:
 
     issues = jira_search(
         jql="project = MOM AND issuetype = Task ORDER BY created DESC",
-        fields=["summary", "status", "duedate",
+        fields=["summary", "status", "duedate", "issuelinks",
                 "customfield_10642", "customfield_10591",
-                "customfield_11765", "customfield_10743"]
+                "customfield_11765", "customfield_10743",
+                "customfield_10809", "customfield_11368", "customfield_11371",
+                "customfield_11370", "customfield_11369", "customfield_11372",
+                "customfield_11373", "customfield_11374", "customfield_11375",
+                "customfield_11376"]
     )
     result = []
     for i in issues:
         f = i["fields"]
+        # Extract linked DEL ticket key
+        del_key = ""
+        for link in (f.get("issuelinks") or []):
+            linked = link.get("inwardIssue") or link.get("outwardIssue") or {}
+            if linked.get("key", "").startswith("DEL-"):
+                del_key = linked["key"]
+                break
         result.append({
             "key": i["key"],
             "summary": f.get("summary", ""),
@@ -112,7 +123,20 @@ def fetch_mom() -> list:
                         or f.get("customfield_10591") or ""),
             "dueDate":          f.get("duedate") or "",
             "expectedDispatch": f.get("customfield_11765") or "",
-            "actualDispatch":   f.get("customfield_10743") or ""
+            "actualDispatch":   f.get("customfield_10743") or "",
+            "linkedDEL":        del_key,
+            "components": {
+                "Chassis":           f.get("customfield_10809") or "",
+                "Panel":             f.get("customfield_11368") or "",
+                "CP Board":          f.get("customfield_11371") or "",
+                "Hub Motor":         f.get("customfield_11370") or "",
+                "Lidar":             f.get("customfield_11369") or "",
+                "Wiring Harness":    f.get("customfield_11372") or "",
+                "Auto Unhitch":      f.get("customfield_11373") or "",
+                "Electronics Boards":f.get("customfield_11374") or "",
+                "Battery":           f.get("customfield_11375") or "",
+                "Charger":           f.get("customfield_11376") or ""
+            }
         })
     cache_set("mom", result)
     print(f"[cache] Fetched {len(result)} MOM tickets")
@@ -185,10 +209,12 @@ SYSTEM_PROMPT = """You are ATI Ops Bot, the operations assistant for ATI Motors'
 ### Jira MOM — Build Rolling Forecast
 One ticket per AMR unit being manufactured. Created automatically when a DEL ticket is approved.
 - **Status progression**: To Do → Kitting → Production → Bringup → Validation → Dispatch → Done
-- **MRS status** = Build is BLOCKED due to material shortage. These are stuck and cannot proceed.
-- **key fields**: summary (customer name), amrType, dueDate, expectedDispatch, actualDispatch
+- **MRS Raised status** = Build is BLOCKED due to material shortage.
+- **key fields**: summary (customer name), amrType, dueDate, expectedDispatch, actualDispatch, linkedDEL
 - expectedDispatch = planned dispatch date. actualDispatch = confirmed date (only set when Done/Dispatched).
 - If expectedDispatch is in the past and status is not Done/Dispatch, the unit is OVERDUE.
+- **linkedDEL**: the DEL ticket key directly linked to this MOM unit (e.g. "DEL-1116"). Use this for DEL↔MOM lookups — it's more reliable than name matching.
+- **components**: each MOM ticket has availability dates for 10 components. A date means that component arrives on that date (not yet available). Empty/blank means already available. When asked about material readiness, report which components have future dates (still pending) vs blank (available). The latest pending date = "Clear to Build" date for that unit.
 
 ### Jira DEL — Delivery Orders
 One ticket per customer sales order. When approved, MOM tickets are auto-created (one per unit).
