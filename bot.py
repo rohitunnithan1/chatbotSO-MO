@@ -12,7 +12,7 @@ import requests as req_lib
 from datetime import date
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
-from google import genai
+from openai import OpenAI
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 SLACK_BOT_TOKEN  = os.environ["SLACK_BOT_TOKEN"]
@@ -20,11 +20,11 @@ SLACK_APP_TOKEN  = os.environ["SLACK_APP_TOKEN"]
 JIRA_EMAIL       = os.environ["JIRA_EMAIL"]
 JIRA_TOKEN       = os.environ["JIRA_API_TOKEN"]
 JIRA_BASE        = "https://ati-motors.atlassian.net"
-GEMINI_KEY       = os.environ["GEMINI_API_KEY"]
+OPENAI_KEY       = os.environ["OPENAI_API_KEY"]
 APPS_SCRIPT_URL  = os.environ.get("APPS_SCRIPT_URL", "")
 
-# ── Gemini setup ──────────────────────────────────────────────────────────────
-gemini = genai.Client(api_key=GEMINI_KEY)
+# ── OpenAI setup ──────────────────────────────────────────────────────────────
+openai_client = OpenAI(api_key=OPENAI_KEY)
 
 # ── Slack app ─────────────────────────────────────────────────────────────────
 app = App(token=SLACK_BOT_TOKEN)
@@ -201,11 +201,13 @@ def answer_question(question: str) -> str:
         + f"\n\nDATA:\n{context}\n\nQuestion: {question}"
     )
 
-    response = gemini.models.generate_content(
-        model="gemini-2.0-flash",
-        contents=prompt
+    response = openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1000,
+        temperature=0.1
     )
-    return response.text.strip()
+    return response.choices[0].message.content.strip()
 
 
 # ── Slack handlers ────────────────────────────────────────────────────────────
