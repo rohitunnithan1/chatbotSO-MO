@@ -42,6 +42,21 @@ def cache_get(key):
 def cache_set(key, data):
     _cache[key] = {"data": data, "ts": time.time()}
 
+# ── Per-user conversation memory ──────────────────────────────────────────────
+_conversations: dict = {}
+MAX_HISTORY = 12  # 6 exchanges (user + assistant pairs)
+
+def get_history(user_id: str) -> list:
+    return _conversations.get(user_id, [])
+
+def save_to_history(user_id: str, role: str, content: str):
+    if user_id not in _conversations:
+        _conversations[user_id] = []
+    _conversations[user_id].append({"role": role, "content": content})
+    # Keep only last MAX_HISTORY messages
+    if len(_conversations[user_id]) > MAX_HISTORY:
+        _conversations[user_id] = _conversations[user_id][-MAX_HISTORY:]
+
 
 # ── Jira REST helper ──────────────────────────────────────────────────────────
 def jira_search(jql: str, fields: list, max_results: int = 200) -> list:
@@ -199,14 +214,16 @@ Upcoming deals not yet converted to DEL tickets. Shows future demand.
 - Flag any unit where expectedDispatch < today and status ≠ Done as OVERDUE ⏰
 
 **Formatting rules**:
-- Be concise. Use bullet points for lists.
-- Always include ticket key (MOM-101, DEL-50) when referencing tickets.
+- Lead with the insight or summary, not raw data. E.g. "3 units are delayed" not a list of ticket IDs.
+- Only mention ticket keys when they add value (e.g. "MOM-101 (HUL Haldia) is overdue").
+- For summaries, group by theme (e.g. by status, by customer, by product type) — don't dump every ticket.
+- Cap lists at 5 items unless the user asks for everything. For longer lists, summarise: "6 units total — 3 XT Lite, 2 Pallet Mover, 1 10K".
 - Dates are YYYY-MM-DD. Today is {TODAY}.
 - If a data source is unavailable, say so clearly and answer from what you have.
-- Group by customer or status when listing multiple items.
+- Remember the conversation history. If the user says "tell me more about that" or "what about the first one", refer back to your previous answer.
 """
 
-def answer_question(question: str) -> str:
+def answer_question(question: str, user_id: str = "default") -> str:
     today = date.today().isoformat()
 
     mom      = fetch_mom()
@@ -225,7 +242,6 @@ def answer_question(question: str) -> str:
             f"{json.dumps(sf[:120], separators=(',', ':'))}\n"
         )
     elif sf and isinstance(sf, dict):
-        # Apps Script may return {"data": [...]} wrapper
         sf_list = sf.get("rows") or sf.get("data") or sf.get("opportunities") or []
         context += (
             f"\n## Salesforce — {len(sf_list)} opportunities\n"
@@ -235,22 +251,30 @@ def answer_question(question: str) -> str:
     else:
         context += "\n## Salesforce — not available\n"
 
-    prompt = (
-        SYSTEM_PROMPT.replace("{TODAY}", today)
-        + f"\n\nDATA:\n{context}\n\nQuestion: {question}"
-    )
+    system_message = SYSTEM_PROMPT.replace("{TODAY}", today) + f"\n\nDATA:\n{context}"
+
+    # Build messages: system + conversation history + new question
+    messages = [{"role": "system", "content": system_message}]
+    messages.extend(get_history(user_id))
+    messages.append({"role": "user", "content": question})
 
     response = openai_client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
+        messages=messages,
         max_tokens=1000,
         temperature=0.1
     )
-    return response.choices[0].message.content.strip()
+    answer = response.choices[0].message.content.strip()
+
+    # Save exchange to memory
+    save_to_history(user_id, "user", question)
+    save_to_history(user_id, "assistant", answer)
+
+    return answer
 
 
 # ── Slack handlers ────────────────────────────────────────────────────────────
-def _reply_with_answer(question: str, channel: str, thread_ts: str, client):
+def _reply_with_answer(question: str, channel: str, thread_ts: str, client, user_id: str = "default"):
     """Post a 'thinking' message, fetch answer, update in place."""
     r = client.chat_postMessage(
         channel=channel,
@@ -260,8 +284,10 @@ def _reply_with_answer(question: str, channel: str, thread_ts: str, client):
     thinking_ts = r["ts"]
 
     try:
-        reply = answer_question(question)
+        reply = answer_question(question, user_id)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         reply = f"⚠️ Something went wrong: {e}"
 
     client.chat_update(channel=channel, ts=thinking_ts, text=reply)
@@ -280,7 +306,7 @@ def handle_mention(event, client):
         )
         return
 
-    _reply_with_answer(text, event["channel"], thread_ts, client)
+    _reply_with_answer(text, event["channel"], thread_ts, client, user_id=event.get("user", "unknown"))
 
 
 @app.event("message")
@@ -293,12 +319,13 @@ def handle_dm(event, client):
 
     text = event["text"].strip()
     channel = event["channel"]
+    user_id = event.get("user", "unknown")
 
     r = client.chat_postMessage(channel=channel, text="🔍 Looking that up...")
     thinking_ts = r["ts"]
 
     try:
-        reply = answer_question(text)
+        reply = answer_question(text, user_id)
     except Exception as e:
         import traceback
         traceback.print_exc()
