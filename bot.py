@@ -213,6 +213,21 @@ Upcoming deals not yet converted to DEL tickets. Shows future demand.
 - Use expectedDispatch for units still in progress
 - Flag any unit where expectedDispatch < today and status ≠ Done as OVERDUE ⏰
 
+**ATI Motors product taxonomy** (these are DISTINCT products — never mix them up):
+- Sherpa XT
+- Sherpa XT Lite
+- Sherpa Lite
+- Sherpa 10K (also referred to as "10K")
+- Pallet Mover (also referred to as "PM")
+- Lifter 500
+- Pivot
+- Sherpa Tug V3
+
+**Product type filtering** (CRITICAL):
+- When the user asks about a specific product (e.g. "Pallet Mover"), ONLY include tickets where `amrType` exactly matches that product.
+- Lifter 500 is NOT a Pallet Mover. Sherpa XT is NOT Sherpa XT Lite. Never include a ticket of the wrong product type.
+- If `amrType` is blank, do NOT guess from the summary — exclude that ticket entirely.
+
 **Formatting rules**:
 - Lead with the insight or summary, not raw data. E.g. "3 units are delayed" not a list of ticket IDs.
 - Only mention ticket keys when they add value (e.g. "MOM-101 (HUL Haldia) is overdue").
