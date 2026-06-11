@@ -219,11 +219,19 @@ def answer_question(question: str) -> str:
         f"## DEL — {len(del_data)} delivery orders\n"
         f"{json.dumps(del_data, separators=(',', ':'))}\n"
     )
-    if sf:
+    if sf and isinstance(sf, list):
         context += (
             f"\n## Salesforce — {len(sf)} opportunities\n"
             f"{json.dumps(sf[:120], separators=(',', ':'))}\n"
         )
+    elif sf and isinstance(sf, dict):
+        # Apps Script may return {"data": [...]} wrapper
+        sf_list = sf.get("data") or sf.get("opportunities") or []
+        context += (
+            f"\n## Salesforce — {len(sf_list)} opportunities\n"
+            f"{json.dumps(sf_list[:120], separators=(',', ':'))}\n"
+        )
+        print(f"[sf] dict keys: {list(sf.keys())}")
     else:
         context += "\n## Salesforce — not available\n"
 
